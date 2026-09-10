@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Find It On The Screen</title>
+<style>
+:root{
+  --navy:#0b2e4f; --teal:#0f7d7d; --tealD:#0b5f5f; --tealT:#e4f2f2;
+  --amber:#c97a1a; --amberPill:#f7dc9a; --green:#1c7a3e; --greenT:#e7f4ec;
+  --red:#b3261e; --card:rgba(255,255,255,.94); --line:#dfe3e0; --grey:#5a6772;
+  --disp:"Segoe UI Black","Arial Black","Segoe UI",Carlito,Calibri,system-ui,sans-serif;
+  --body:Calibri,Carlito,"Segoe UI",Candara,"Helvetica Neue",Arial,sans-serif;
+  --pz:1; --ui:clamp(25px,6.3vw,38px); --tx:0px; --ty:0px; --ry:-6deg; --rx:1.6deg; --sw:230vw;
+}
+*{box-sizing:border-box}
+button,select{font-size:1em;font-family:inherit;color:inherit}
+html,body{margin:0;padding:0;height:100%}
+body{font-family:var(--body);font-size:var(--ui);color:var(--navy);
+  background:#20303c;overflow-x:hidden;-webkit-text-size-adjust:100%}
+.disp{font-family:var(--disp);font-weight:900}
+
+/* the room behind everything */
+.room{position:fixed;inset:0;z-index:0;overflow:hidden}
+.room svg{width:100%;height:100%;display:block;filter:blur(1.5px) saturate(.9)}
+#cam{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;background:#111}
+.room.live #cam{display:block}
+.room.live svg{display:none}
+.room.live::after{background:linear-gradient(180deg,rgba(10,20,28,.06),rgba(10,20,28,.20))}
+.room::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,20,28,.18),rgba(10,20,28,.42))}
+
+#app{position:relative;z-index:3;min-height:100%;padding:.5em .5em .8em;
+  display:flex;flex-direction:column;align-items:center;pointer-events:none}
+#app>*{pointer-events:auto}
+
+/* floating pills */
+.pill{position:fixed;top:.5em;z-index:6;background:rgba(255,255,255,.95);border:0;border-radius:18px;
+  font-family:var(--disp);font-weight:900;color:var(--navy);font-size:1em;
+  padding:.42em .9em;box-shadow:0 8px 22px rgba(0,0,0,.34);cursor:pointer;
+  min-height:1.7em;display:flex;align-items:center;gap:.3em}
+.pill.left{left:.5em} .pill.right{right:.5em}
+.pill .ico{color:var(--teal);font-size:1.1em;line-height:1}
+.pill:active{background:#eef4f7}
+
+/* the scene, hung on the wall */
+.arlayer{position:fixed;inset:0;overflow:hidden;z-index:1;perspective:1600px;touch-action:none;cursor:grab}
+.arlayer.dragging{cursor:grabbing}
+.panel{position:absolute;left:50%;top:34%;width:var(--sw);
+  transform:translate(-50%,-50%) translate3d(var(--tx),var(--ty),0) rotateY(var(--ry)) rotateX(var(--rx)) scale(var(--pz));
+  transform-origin:50% 50%;will-change:transform}
+.panel.shake{animation:sh .34s}
+@keyframes sh{0%,100%{filter:none}30%{filter:brightness(1.25) saturate(.6)}70%{filter:brightness(.9)}}
+.stage{position:relative;border-radius:10px;overflow:hidden;
+  box-shadow:0 26px 60px rgba(0,0,0,.55),0 0 0 3px rgba(255,255,255,.5);touch-action:manipulation}
+.stage svg{display:block;width:100%;height:auto}
+[data-hit]{cursor:pointer}
+.edge{position:fixed;top:22%;z-index:6;background:rgba(255,255,255,.82);border:0;border-radius:18px;
+  font-family:var(--disp);font-weight:900;color:var(--navy);font-size:.7em;padding:.35em .65em;
+  box-shadow:0 8px 22px rgba(0,0,0,.34);display:none;align-items:center;gap:.25em;pointer-events:none}
+.edge.show{display:flex;animation:eg 1.1s ease-in-out infinite}
+.edge.l{left:.5em} .edge.r{right:.5em}
+@keyframes eg{0%,100%{opacity:.65}50%{opacity:1}}
+.ring{position:absolute;border:7px solid #ffd166;border-radius:999px;pointer-events:none;animation:rg .95s ease-out forwards}
+@keyframes rg{0%{transform:scale(.4);opacity:1}100%{transform:scale(1.55);opacity:0}}
+.hintpulse{position:absolute;border:8px dashed #ffd166;border-radius:20px;pointer-events:none;animation:hp 1s ease-in-out 3}
+@keyframes hp{0%,100%{opacity:.25}50%{opacity:1}}
+
+/* the sheet */
+.sheet{width:100%;max-width:1180px;background:var(--card);position:relative;z-index:3;border-radius:28px;
+  box-shadow:0 14px 40px rgba(0,0,0,.34);padding:.7em .75em .85em;margin-top:auto}
+.sheet.menu{margin-top:2.6em}
+.lab{font-family:var(--disp);font-weight:900;color:#7d8794;font-size:.86em;
+  letter-spacing:.1em;text-transform:uppercase;margin-bottom:.35em}
+.clue{display:inline-block;background:var(--amberPill);border-radius:16px;
+  font-family:var(--disp);font-weight:900;color:var(--navy);font-size:1.2em;
+  padding:.4em .8em;line-height:1.2}
+.clue.done{background:var(--greenT);color:var(--green)}
+.found{font-family:var(--disp);font-weight:900;color:#7d8794;font-size:1em;margin-top:.5em}
+.say{font-size:.95em;line-height:1.35;color:var(--grey);margin-top:.4em;min-height:2.1em}
+.say.good{color:#14532b} .say.good b{color:var(--green);font-family:var(--disp);font-weight:900}
+.say.bad{color:#7a1d17;font-weight:700}
+
+.topline{width:100%;max-width:1180px;display:flex;align-items:center;gap:.5em;
+  position:absolute;top:.5em;left:50%;transform:translateX(-50%);padding:0 .7em}
+.brand{font-family:var(--disp);font-weight:900;color:#fff;font-size:.92em;
+  text-shadow:0 2px 10px rgba(0,0,0,.6);flex:1;min-width:0;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.pillcount{background:rgba(255,255,255,.95);border-radius:999px;padding:.22em .85em;
+  font-family:var(--disp);font-weight:900;font-size:.9em;color:var(--navy)}
+
+/* controls */
+.ctrls{display:flex;flex-wrap:wrap;gap:.45em;align-items:center}
+.ctl{border:0;border-radius:16px;background:#eef1f3;color:var(--navy);font-family:var(--disp);
+  font-weight:900;font-size:1em;padding:.5em 1em;min-height:1.8em;cursor:pointer;line-height:1.2}
+.ctl.blue{background:#dceaf6;color:#134a75}
+.ctl.go{background:var(--teal);color:#fff}
+.ctl.warnbtn{background:var(--amber);color:#fff}
+.ctl:active{filter:brightness(.94)}
+.stepper{display:inline-flex;align-items:center;background:#fff;border:2px solid var(--line);
+  border-radius:16px;overflow:hidden;min-height:1.8em}
+.sbtn{border:0;background:#fff;font-size:1.1em;font-weight:900;color:var(--navy);
+  width:1.9em;min-height:1.7em;cursor:pointer;font-family:var(--disp)}
+.sbtn:active{background:#eef1f3}
+.skey{font-family:var(--disp);font-weight:900;font-size:1em;padding:0 .5em;min-width:3.6em;text-align:center}
+
+/* menu cards */
+.mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.55em}
+.mcard{display:flex;flex-direction:column;align-items:flex-start;gap:.1em;text-align:left;
+  background:#fff;border:2px solid var(--line);border-left:12px solid var(--teal);
+  border-radius:20px;padding:.7em .85em;cursor:pointer;font-family:var(--body);font-size:1em}
+.mcard.done{border-left-color:var(--green);background:#f4fbf6}
+.mcard:active{background:var(--tealT)}
+.mstep{color:var(--amber);font-family:var(--disp);font-weight:900;
+  letter-spacing:.08em;text-transform:uppercase;font-size:.64em}
+.mtitle{font-family:var(--disp);font-weight:900;color:var(--navy);font-size:1em;line-height:1.15}
+.mdesc{color:var(--grey);font-size:.78em;line-height:1.3}
+.score{margin-top:.35em;background:#eef1f3;border-radius:999px;padding:.18em .8em;
+  font-family:var(--disp);font-weight:900;font-size:.78em;color:var(--navy)}
+.score.done{background:var(--greenT);color:var(--green)}
+.note{color:#7d8794;font-size:.86em;margin-top:.45em;line-height:1.3}
+.warn{background:#fdf3e0;border:2px solid var(--amber);border-radius:14px;padding:.5em .8em;
+  font-size:.84em;color:#7a4a08;margin-bottom:.5em}
+
+/* word list */
+.wtitle{font-family:var(--disp);font-weight:900;color:#fff;background:var(--navy);
+  border-radius:14px;padding:.34em .8em;font-size:1em;margin:.7em 0 .35em}
+.wlist{display:grid;grid-template-columns:1fr;gap:.25em}
+.wrow{display:grid;grid-template-columns:minmax(140px,.42fr) 1fr;gap:.5em;
+  background:#fff;border:1px solid var(--line);border-radius:12px;padding:.35em .6em}
+.ww{font-family:var(--disp);font-weight:900;color:var(--navy);font-size:.9em}
+.wd{color:var(--grey);font-size:.84em;line-height:1.3}
+@media (max-width:620px){
+  .wrow{grid-template-columns:1fr}
+  .ctrls{gap:.4em}
+  .ctl{flex:1 1 44%;text-align:center}
+  .stepper{flex:1 1 100%;justify-content:space-between}
+  .sheet.play{padding:.6em .7em .7em}
+  .sbtn{flex:0 0 auto}
+  :root{--ry:-4deg;--rx:1.2deg;--sw:260vw}
+  .sheet.menu{margin-top:2.5em}
+  .pill{font-size:.92em;min-height:60px}
+}
+@media (min-width:900px) and (orientation:landscape){
+  .sheet.play{position:fixed;right:.6em;bottom:.6em;top:auto;width:min(36vw,560px);
+    margin:0;max-height:88vh;overflow:auto}
+  .edge.r{right:calc(min(36vw,560px) + 1.4em)}
+  .edge{top:46%}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="room" id="room" aria-hidden="true">
+<video id="cam" playsinline autoplay muted></video>
+<svg viewBox="0 0 1400 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+ <defs>
+  <linearGradient id="rw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e6e1d6"/><stop offset="1" stop-color="#cdc7ba"/></linearGradient>
+  <linearGradient id="rt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fae6f"/><stop offset="1" stop-color="#3f6b45"/></linearGradient>
+ </defs>
+ <rect width="1400" height="900" fill="url(#rw)"/>
+ <rect x="150" y="90" width="1100" height="520" fill="#2b2b2b"/>
+ <rect x="168" y="108" width="1064" height="484" fill="url(#rt)"/>
+ <circle cx="380" cy="250" r="90" fill="#5f8f56" opacity=".8"/>
+ <circle cx="620" cy="200" r="120" fill="#6fa062" opacity=".7"/>
+ <circle cx="900" cy="280" r="110" fill="#568049" opacity=".8"/>
+ <circle cx="1120" cy="220" r="95" fill="#6b9a5f" opacity=".7"/>
+ <rect x="430" y="90" width="26" height="520" fill="#2b2b2b"/>
+ <rect x="700" y="90" width="26" height="520" fill="#2b2b2b"/>
+ <rect x="970" y="90" width="26" height="520" fill="#2b2b2b"/>
+ <rect x="0" y="610" width="1400" height="290" fill="#b9a98f"/>
+ <rect x="0" y="610" width="1400" height="18" fill="#a4937a"/>
+ <rect x="60" y="640" width="520" height="230" rx="34" fill="#e3ded2"/>
+ <rect x="86" y="620" width="470" height="90" rx="30" fill="#eeeae0"/>
+ <rect x="980" y="660" width="330" height="210" rx="20" fill="#8a7457"/>
+</svg>
+</div>
+<div id="app"></div>
+<script>
+
+(function(){
+"use strict";
+
+/* ---------- storage ---------- */
+var KEY="VU23560_find_it_v1", canSave=true;
+try{ localStorage.setItem(KEY+"_probe","1"); localStorage.removeItem(KEY+"_probe"); }catch(e){ canSave=false; }
+function save(){ if(!canSave)return; try{ localStorage.setItem(KEY, JSON.stringify(S.found)); }catch(e){} }
+function load(){ if(!canSave)return null; try{ var r=localStorage.getItem(KEY); return r?JSON.parse(r):null; }catch(e){ return null; } }
+
+/* ---------- helpers ---------- */
+function shuffle(a){ var i,j,t; for(i=a.length-1;i>0;i--){ j=Math.floor(Math.random()*(i+1)); t=a[i];a[i]=a[j];a[j]=t; } return a; }
+function el(id){ return document.getElementById(id); }
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+/* ---------- scene art ---------- */
+function hit(id,x,y,w,h){ return '<rect class="hit" data-hit="'+id+'" x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="transparent" pointer-events="all"></rect>'; }
+
+function sceneDesk(){
+  var s='<svg viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg" aria-label="A desk with a laptop and other things">';
+  s+='<defs><linearGradient id="wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d4a6e"/><stop offset="1" stop-color="#123249"/></linearGradient></defs>';
+  s+='<rect width="1200" height="700" fill="url(#wall)"/>';
+  s+='<rect x="0" y="470" width="1200" height="230" fill="#8a6236"/><rect x="0" y="470" width="1200" height="16" fill="#a97a45"/>';
+  /* window decoy */
+  s+='<rect x="60" y="60" width="180" height="150" rx="8" fill="#2b6a8f" stroke="#0e2233" stroke-width="6"/>';
+  s+='<line x1="150" y1="60" x2="150" y2="210" stroke="#0e2233" stroke-width="6"/>';
+  s+='<line x1="60" y1="135" x2="240" y2="135" stroke="#0e2233" stroke-width="6"/>';
+  /* plant decoy */
+  s+='<rect x="90" y="380" width="90" height="90" rx="8" fill="#b5651d"/>';
+  s+='<path d="M135 380 q-50 -70 -10 -110 q30 40 10 110" fill="#2f7d4f"/>';
+  s+='<path d="M135 380 q50 -60 15 -100 q-25 40 -15 100" fill="#3d9963"/>';
+  /* mug decoy */
+  s+='<rect x="252" y="418" width="70" height="62" rx="8" fill="#e8e2d5" stroke="#c3bcae" stroke-width="3"/>';
+  s+='<path d="M322 434 q30 15 0 32" fill="none" stroke="#e8e2d5" stroke-width="10"/>';
+  /* laptop */
+  s+='<g><rect x="380" y="120" width="440" height="300" rx="16" fill="#e6ebef" stroke="#0e2233" stroke-width="8"/>';
+  s+='<rect x="404" y="146" width="392" height="248" rx="6" fill="#123f6b"/>';
+  s+='<rect x="430" y="180" width="180" height="10" rx="5" fill="#2b6a99"/>';
+  s+='<rect x="430" y="206" width="240" height="10" rx="5" fill="#2b6a99"/>';
+  s+='<rect x="430" y="232" width="150" height="10" rx="5" fill="#2b6a99"/>';
+  s+='<rect x="640" y="270" width="120" height="90" rx="8" fill="#1a5384"/></g>';
+  s+=hit("screen",404,146,392,248);
+  /* camera */
+  s+='<circle cx="600" cy="134" r="9" fill="#0e2233"/><circle cx="600" cy="134" r="4" fill="#6fd0ff"/>';
+  s+=hit("camera",560,102,80,42);
+  /* base */
+  s+='<path d="M340 420 h520 l60 70 h-640 z" fill="#d3dae0" stroke="#0e2233" stroke-width="8"/>';
+  /* keys */
+  var r,c,x0,y0;
+  for(r=0;r<4;r++){ for(c=0;c<12;c++){ x0=392+c*36+r*7; y0=432+r*13;
+    s+='<rect x="'+x0+'" y="'+y0+'" width="28" height="10" rx="2" fill="#fff" stroke="#a9b4bd"/>'; } }
+  s+=hit("keyboard",398,428,400,58);
+  /* trackpad */
+  s+='<path d="M536 492 h140 l18 26 h-176 z" fill="#f7f9fa" stroke="#7f8c96" stroke-width="4"/>';
+  s+=hit("trackpad",524,486,166,32);
+  /* power button */
+  s+='<circle cx="836" cy="436" r="13" fill="#fff" stroke="#0e2233" stroke-width="4"/>';
+  s+='<path d="M836 429 v9" stroke="#0e2233" stroke-width="4" stroke-linecap="round"/>';
+  s+='<path d="M829 432 a10 10 0 1 0 14 0" fill="none" stroke="#0e2233" stroke-width="3"/>';
+  s+=hit("power",808,410,58,54);
+  /* usb port */
+  s+='<rect x="346" y="440" width="30" height="14" rx="3" fill="#0e2233"/>';
+  s+='<rect x="350" y="444" width="22" height="6" fill="#7fa3bd"/>';
+  s+=hit("usb",330,428,64,42);
+  /* charger */
+  s+='<path d="M340 470 q-90 40 -170 20" fill="none" stroke="#1a1a1a" stroke-width="10"/>';
+  s+='<rect x="140" y="470" width="46" height="34" rx="6" fill="#1f1f1f"/>';
+  s+='<rect x="150" y="462" width="10" height="10" fill="#8a8a8a"/><rect x="166" y="462" width="10" height="10" fill="#8a8a8a"/>';
+  s+=hit("charger",128,452,80,70);
+  /* mouse */
+  s+='<ellipse cx="930" cy="500" rx="46" ry="66" fill="#f2f4f6" stroke="#0e2233" stroke-width="6"/>';
+  s+='<line x1="930" y1="440" x2="930" y2="490" stroke="#0e2233" stroke-width="4"/>';
+  s+='<circle cx="930" cy="480" r="7" fill="#8fa3b3"/>';
+  s+=hit("mouse",878,430,104,140);
+  /* printer */
+  s+='<rect x="1000" y="360" width="180" height="112" rx="10" fill="#cfd6dc" stroke="#0e2233" stroke-width="6"/>';
+  s+='<rect x="1030" y="322" width="120" height="46" fill="#fff" stroke="#0e2233" stroke-width="5"/>';
+  s+='<rect x="1022" y="432" width="136" height="16" rx="4" fill="#0e2233"/>';
+  s+='<circle cx="1158" cy="384" r="8" fill="#2f7d4f"/>';
+  s+=hit("printer",994,314,196,166);
+  /* headphones */
+  s+='<path d="M250 560 a70 70 0 0 1 140 0" fill="none" stroke="#1f1f1f" stroke-width="14"/>';
+  s+='<rect x="236" y="556" width="34" height="60" rx="14" fill="#1f1f1f"/>';
+  s+='<rect x="370" y="556" width="34" height="60" rx="14" fill="#1f1f1f"/>';
+  s+=hit("headphones",228,528,186,100);
+  /* phone decoy */
+  s+='<rect x="700" y="540" width="80" height="140" rx="12" fill="#1b2733" stroke="#0e2233" stroke-width="5"/>';
+  s+='<rect x="710" y="556" width="60" height="108" rx="4" fill="#2f6f8f"/>';
+  /* notebook decoy */
+  s+='<rect x="820" y="590" width="180" height="90" rx="6" fill="#f0e6c8" stroke="#b8a97c" stroke-width="4"/>';
+  s+='<line x1="840" y1="616" x2="980" y2="616" stroke="#c9bb92" stroke-width="4"/>';
+  s+='<line x1="840" y1="640" x2="980" y2="640" stroke="#c9bb92" stroke-width="4"/>';
+  s+='</svg>';
+  return s;
+}
+
+function sceneDesktop(){
+  var s='<svg viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg" aria-label="A desktop screen">';
+  s+='<rect width="1200" height="700" fill="#0e2233"/>';
+  s+='<rect x="30" y="24" width="1140" height="652" rx="12" fill="#bcd6e8" stroke="#7fa3bd" stroke-width="6"/>';
+  var ic=[["W","#2b5799","Word",120,90],["X","#1e7448","Excel",420,90],["e","#1478b4","Edge",720,90],
+          ["O","#0f5aa0","Outlook",120,250],["R","#7a848c","Recycle bin",420,250],["S","#5a636e","Settings",720,250],
+          ["F","#d6a028","Folder",120,410],["T","#5a50aa","Teams",420,410],["P","#a0507a","Photos",720,410]];
+  var i,a;
+  for(i=0;i<ic.length;i++){ a=ic[i];
+    s+='<rect x="'+a[3]+'" y="'+a[4]+'" width="96" height="96" rx="18" fill="'+a[1]+'"/>';
+    s+='<text x="'+(a[3]+48)+'" y="'+(a[4]+66)+'" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="46" fill="#fff">'+a[0]+'</text>';
+    s+='<text x="'+(a[3]+118)+'" y="'+(a[4]+60)+'" font-family="Arial" font-size="28" fill="#0e2233">'+a[2]+'</text>';
+  }
+  s+=hit("icon",120,90,96,96);
+  s+=hit("icon",420,90,96,96);
+  s+=hit("icon",720,90,96,96);
+  s+=hit("icon",120,250,96,96);
+  s+=hit("icon",720,250,96,96);
+  s+=hit("icon",420,410,96,96);
+  s+=hit("icon",720,410,96,96);
+  s+=hit("recycle",420,250,96,96);
+  s+=hit("folder",120,410,96,96);
+  /* cursor */
+  s+='<g><path d="M640 470 v70 l18 -18 l14 30 l16 -8 l-14 -30 l24 -2 z" fill="#fff" stroke="#0e2233" stroke-width="4"/></g>';
+  s+=hit("cursor",614,456,110,110);
+  /* taskbar */
+  s+='<rect x="30" y="586" width="1140" height="90" rx="10" fill="#e9eff4"/>';
+  s+='<rect x="60" y="604" width="56" height="54" rx="8" fill="#123f6b"/>';
+  s+='<rect x="72" y="616" width="14" height="14" fill="#fff"/><rect x="90" y="616" width="14" height="14" fill="#fff"/>';
+  s+='<rect x="72" y="634" width="14" height="14" fill="#fff"/><rect x="90" y="634" width="14" height="14" fill="#fff"/>';
+  s+=hit("start",44,592,90,80);
+  s+='<rect x="150" y="604" width="340" height="54" rx="27" fill="#fff" stroke="#9fb3c2" stroke-width="3"/>';
+  s+='<text x="180" y="640" font-family="Arial" font-size="28" fill="#5a6772">Search</text>';
+  s+=hit("search",150,600,344,62);
+  s+='<text x="1090" y="640" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="30" fill="#123f6b">9:15</text>';
+  s+=hit("clock",1030,596,130,72);
+  s+='<rect x="540" y="606" width="50" height="50" rx="8" fill="#2b5799"/>';
+  s+='<rect x="606" y="606" width="50" height="50" rx="8" fill="#1e7448"/>';
+  s+=hit("taskbar",700,588,306,86);
+  s+='</svg>';
+  return s;
+}
+
+function sceneBrowser(){
+  var s='<svg viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg" aria-label="A browser window">';
+  s+='<rect width="1200" height="700" fill="#1d4a6e"/>';
+  s+='<rect x="40" y="30" width="1120" height="640" rx="12" fill="#fff" stroke="#0e2233" stroke-width="6"/>';
+  /* tab strip */
+  s+='<rect x="40" y="30" width="1120" height="66" fill="#dfe7ec"/>';
+  s+='<rect x="60" y="42" width="240" height="54" rx="8" fill="#fff" stroke="#b9c6cf" stroke-width="3"/>';
+  s+='<text x="86" y="78" font-family="Arial" font-size="26" fill="#0e2233">Library</text>';
+  s+='<rect x="312" y="42" width="240" height="54" rx="8" fill="#eef3f6" stroke="#b9c6cf" stroke-width="3"/>';
+  s+='<text x="338" y="78" font-family="Arial" font-size="26" fill="#5a6772">Timetable</text>';
+  s+='<rect x="564" y="42" width="240" height="54" rx="8" fill="#eef3f6" stroke="#b9c6cf" stroke-width="3"/>';
+  s+='<text x="590" y="78" font-family="Arial" font-size="26" fill="#5a6772">Email</text>';
+  s+=hit("tab",60,36,246,62);
+  /* close */
+  s+='<text x="1120" y="76" text-anchor="middle" font-family="Arial" font-size="40" fill="#0e2233">&#215;</text>';
+  s+=hit("close",1090,40,62,56);
+  /* toolbar */
+  s+='<rect x="40" y="96" width="1120" height="76" fill="#f2f6f8"/>';
+  s+='<path d="M100 134 l-26 0 m10 -12 l-12 12 l12 12" fill="none" stroke="#123f6b" stroke-width="6" stroke-linecap="round"/>';
+  s+='<circle cx="86" cy="134" r="26" fill="none" stroke="#123f6b" stroke-width="4"/>';
+  s+=hit("back",54,102,66,66);
+  s+='<circle cx="164" cy="134" r="26" fill="none" stroke="#123f6b" stroke-width="4"/>';
+  s+='<path d="M152 122 a20 20 0 1 1 -4 18" fill="none" stroke="#123f6b" stroke-width="6"/>';
+  s+='<path d="M146 116 l8 10 l-12 2 z" fill="#123f6b"/>';
+  s+=hit("refresh",132,102,66,66);
+  s+='<rect x="216" y="108" width="820" height="54" rx="27" fill="#fff" stroke="#9fb3c2" stroke-width="3"/>';
+  s+='<text x="248" y="144" font-family="Arial" font-size="26" fill="#0e2233">www.example.gov.au</text>';
+  s+=hit("address",216,104,824,62);
+  s+='<path d="M1090 112 l9 20 l22 3 l-16 15 l4 22 l-19 -11 l-19 11 l4 -22 l-16 -15 l22 -3 z" fill="#fff" stroke="#c97a1a" stroke-width="4"/>';
+  s+=hit("star",1058,100,74,70);
+  /* page */
+  s+='<rect x="40" y="172" width="1090" height="498" fill="#fff"/>';
+  s+='<text x="90" y="240" font-family="Arial" font-weight="bold" font-size="40" fill="#0e2233">Library services</text>';
+  s+='<rect x="90" y="270" width="700" height="12" rx="6" fill="#dde4e9"/>';
+  s+='<rect x="90" y="300" width="640" height="12" rx="6" fill="#dde4e9"/>';
+  s+='<rect x="90" y="330" width="700" height="12" rx="6" fill="#dde4e9"/>';
+  s+='<text x="90" y="400" font-family="Arial" font-size="30" fill="#1a56b8" text-decoration="underline">Open the opening hours</text>';
+  s+='<line x1="90" y1="410" x2="470" y2="410" stroke="#1a56b8" stroke-width="4"/>';
+  s+=hit("link",84,374,400,52);
+  s+='<rect x="90" y="450" width="640" height="12" rx="6" fill="#dde4e9"/>';
+  s+='<rect x="90" y="480" width="580" height="12" rx="6" fill="#dde4e9"/>';
+  s+='<rect x="860" y="220" width="240" height="180" rx="8" fill="#e7eef3" stroke="#c2cfd8" stroke-width="4"/>';
+  s+='<text x="980" y="320" text-anchor="middle" font-family="Arial" font-size="26" fill="#7d8b96">picture</text>';
+  /* scroll bar */
+  s+='<rect x="1130" y="172" width="30" height="498" fill="#eef2f5"/>';
+  s+='<rect x="1134" y="200" width="22" height="150" rx="11" fill="#9fb3c2"/>';
+  s+=hit("scroll",1124,172,44,498);
+  s+='</svg>';
+  return s;
+}
+
+function sceneEmail(){
+  var s='<svg viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg" aria-label="An email window">';
+  s+='<rect width="1200" height="700" fill="#1d4a6e"/>';
+  s+='<rect x="40" y="30" width="1120" height="640" rx="12" fill="#fff" stroke="#0e2233" stroke-width="6"/>';
+  s+='<rect x="40" y="30" width="1120" height="70" rx="12" fill="#123f6b"/>';
+  s+='<text x="76" y="76" font-family="Arial" font-weight="bold" font-size="32" fill="#fff">Mail</text>';
+  s+='<text x="1000" y="76" font-family="Arial" font-size="28" fill="#cfe0ee">Sign out</text>';
+  s+=hit("signout",980,40,150,58);
+  /* new email */
+  s+='<rect x="70" y="126" width="250" height="64" rx="10" fill="#0f7d7d"/>';
+  s+='<text x="195" y="168" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="28" fill="#fff">New email</text>';
+  s+=hit("newmail",64,120,262,76);
+  /* inbox list */
+  s+='<rect x="70" y="210" width="250" height="430" rx="8" fill="#eef3f6" stroke="#c2cfd8" stroke-width="3"/>';
+  s+='<text x="96" y="252" font-family="Arial" font-weight="bold" font-size="30" fill="#0e2233">Inbox</text>';
+  s+='<text x="96" y="306" font-family="Arial" font-size="26" fill="#5a6772">Sent</text>';
+  s+='<text x="96" y="356" font-family="Arial" font-size="26" fill="#5a6772">Drafts</text>';
+  s+='<text x="96" y="406" font-family="Arial" font-size="26" fill="#5a6772">Deleted</text>';
+  s+=hit("inbox",76,222,238,52);
+  /* message pane */
+  s+='<rect x="350" y="126" width="780" height="514" rx="8" fill="#fff" stroke="#c2cfd8" stroke-width="3"/>';
+  s+='<text x="382" y="182" font-family="Arial" font-size="26" fill="#5a6772">To</text>';
+  s+='<rect x="450" y="152" width="640" height="46" rx="6" fill="#f2f6f8" stroke="#c2cfd8" stroke-width="3"/>';
+  s+='<text x="472" y="184" font-family="Arial" font-size="24" fill="#0e2233">teacher@example.edu.au</text>';
+  s+=hit("to",374,146,724,58);
+  s+='<text x="382" y="252" font-family="Arial" font-size="26" fill="#5a6772">Subject</text>';
+  s+='<rect x="520" y="222" width="570" height="46" rx="6" fill="#f2f6f8" stroke="#c2cfd8" stroke-width="3"/>';
+  s+='<text x="542" y="254" font-family="Arial" font-size="24" fill="#0e2233">An idea for a class trip</text>';
+  s+=hit("subject",374,216,724,58);
+  /* attachment */
+  s+='<rect x="382" y="290" width="230" height="48" rx="24" fill="#e4f2f2" stroke="#0f7d7d" stroke-width="3"/>';
+  s+='<path d="M406 326 v-16 a11 11 0 0 1 22 0 v20 a17 17 0 0 1 -34 0 v-18" fill="none" stroke="#0f7d7d" stroke-width="4" stroke-linecap="round"/>';
+  s+='<text x="442" y="322" font-family="Arial" font-size="24" fill="#0b5f5f">map.pdf</text>';
+  s+=hit("attach",376,284,244,60);
+  /* body */
+  s+='<text x="382" y="392" font-family="Arial" font-size="26" fill="#0e2233">Hi,</text>';
+  s+='<rect x="382" y="416" width="600" height="12" rx="6" fill="#dde4e9"/>';
+  s+='<rect x="382" y="446" width="560" height="12" rx="6" fill="#dde4e9"/>';
+  s+='<rect x="382" y="476" width="600" height="12" rx="6" fill="#dde4e9"/>';
+  /* buttons */
+  s+='<rect x="382" y="540" width="180" height="66" rx="10" fill="#1c7a3e"/>';
+  s+='<text x="472" y="584" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="28" fill="#fff">Send</text>';
+  s+=hit("send",376,534,192,78);
+  s+='<rect x="586" y="540" width="180" height="66" rx="10" fill="#fff" stroke="#123f6b" stroke-width="4"/>';
+  s+='<text x="676" y="584" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="28" fill="#123f6b">Reply</text>';
+  s+=hit("reply",580,534,192,78);
+  s+='<rect x="790" y="540" width="180" height="66" rx="10" fill="#fff" stroke="#b3261e" stroke-width="4"/>';
+  s+='<text x="880" y="584" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="28" fill="#b3261e">Delete</text>';
+  s+='</svg>';
+  return s;
+}
+
+/* ---------- content ---------- */
+var SCENES=[
+ {id:"desk", step:"Scene 1", title:"The desk", desc:"Ten things to find on the desk.", art:sceneDesk,
+  T:[
+   {id:"screen",  w:"the screen",      c:"Find the part you look at. It shows you everything.", why:"You look at the screen. Nothing is typed on it."},
+   {id:"keyboard",w:"the keyboard",    c:"Find the part with all the keys. You type on it.",    why:"You type on the keyboard. Note: on the keyboard, not in it."},
+   {id:"trackpad",w:"the trackpad",    c:"Find the flat square. You move the cursor with it.",  why:"The trackpad moves the cursor. A mouse does the same job."},
+   {id:"power",   w:"the power button",c:"Find the small round button. You press it to start.", why:"You turn the laptop on with the power button. Turn it on, never turn on it."},
+   {id:"camera",  w:"the camera",      c:"Find the small dot above the screen.",                why:"The camera is at the top of the screen."},
+   {id:"usb",     w:"the USB port",    c:"Find the small hole on the side of the laptop.",      why:"You plug a USB stick in here."},
+   {id:"charger", w:"the charger",     c:"Find the cable and the plug.",                        why:"You plug the charger in when the battery is low."},
+   {id:"mouse",   w:"the mouse",       c:"Find the thing you hold in your hand and click.",     why:"You click on things with the mouse."},
+   {id:"printer", w:"the printer",     c:"Find the machine that puts your work on paper.",      why:"You print your work out on a printer."},
+   {id:"headphones",w:"the headphones",c:"Find the thing you put on your ears.",                why:"Use headphones so you do not disturb the class."}
+  ]},
+ {id:"desktop", step:"Scene 2", title:"The desktop", desc:"Eight things to find on the first screen.", art:sceneDesktop,
+  T:[
+   {id:"icon",   w:"an icon",         c:"Find a small picture. You click on it to open a program.", why:"Every small picture on the desktop is an icon."},
+   {id:"cursor", w:"the cursor",      c:"Find the white arrow.",                                    why:"The cursor moves when you move the mouse."},
+   {id:"taskbar",w:"the taskbar",     c:"Find the long bar at the bottom of the screen.",           why:"The taskbar shows what is open right now."},
+   {id:"start",  w:"the start button",c:"Find the button at the bottom left corner.",               why:"The start button opens the list of programs."},
+   {id:"search", w:"the search box",  c:"Find the long white box next to the start button.",        why:"You type a program name in the search box."},
+   {id:"clock",  w:"the clock",       c:"Find the time. It is on the right of the taskbar.",        why:"The clock is at the far right of the taskbar."},
+   {id:"folder", w:"a folder",        c:"Find the yellow icon. It holds your files.",               why:"A folder holds files. A file is one piece of work."},
+   {id:"recycle",w:"the recycle bin", c:"Find the icon for things you do not want.",                why:"Deleted files go to the recycle bin."}
+  ]},
+ {id:"browser", step:"Scene 3", title:"The browser", desc:"Eight things to find in a browser window.", art:sceneBrowser,
+  T:[
+   {id:"address",w:"the address bar", c:"Find the long box at the top. The website address is in it.", why:"You type a website address in the address bar."},
+   {id:"tab",    w:"a tab",           c:"Find one of the three names at the very top.",                why:"Each tab is a different page. Three tabs are open here."},
+   {id:"back",   w:"the back arrow",  c:"Find the arrow that takes you to the page before.",           why:"Click on the back arrow to go back one page."},
+   {id:"refresh",w:"the refresh button",c:"Find the round arrow. It loads the page again.",            why:"Refresh loads the same page again."},
+   {id:"link",   w:"a link",          c:"Find the blue words with a line under them.",                 why:"Click on a link to open another page."},
+   {id:"scroll", w:"the scroll bar",  c:"Find the grey bar on the right side.",                        why:"Scroll down to see the rest of the page."},
+   {id:"star",   w:"the star",        c:"Find the star. You save a page you like with it.",            why:"The star saves a page so you can find it again."},
+   {id:"close",  w:"the close button",c:"Find the cross at the top right corner.",                     why:"The cross closes the window."}
+  ]},
+ {id:"email", step:"Scene 4", title:"The email", desc:"Eight things to find in an email.", art:sceneEmail,
+  T:[
+   {id:"inbox",  w:"the inbox",       c:"Find the place where new messages arrive.",              why:"New email arrives in the inbox."},
+   {id:"newmail",w:"the New email button",c:"Find the green button. You start a message with it.", why:"Click on New email to start writing."},
+   {id:"to",     w:"the To box",      c:"Find the box with the other person's address in it.",    why:"The address of the other person goes in the To box."},
+   {id:"subject",w:"the Subject box", c:"Find the box that says what the email is about.",        why:"The subject tells the reader what the email is about."},
+   {id:"attach", w:"the attachment",  c:"Find the file that travels with the message.",           why:"An attachment is a file you send with the email."},
+   {id:"send",   w:"the Send button", c:"Find the green button at the bottom.",                   why:"Click on Send when the email is finished."},
+   {id:"reply",  w:"the Reply button",c:"Find the button you use to answer a message.",           why:"Reply answers the person who wrote to you."},
+   {id:"signout",w:"Sign out",        c:"Find the words at the top right. You use them at the end.", why:"Always sign out at the end of class."}
+  ]}
+];
+
+/* mixed clue round: 12 items drawn across all scenes */
+var MIX=[
+ ["desk","keyboard"],["desktop","cursor"],["browser","address"],["email","subject"],
+ ["desk","power"],["desktop","taskbar"],["browser","link"],["email","attach"],
+ ["desk","usb"],["desktop","search"],["browser","scroll"],["email","send"]
+];
+
+var PARTS=SCENES.length+1;
+function partTotal(i){ return i<SCENES.length ? SCENES[i].T.length : MIX.length; }
+var TOTAL=0,pi; for(pi=0;pi<PARTS;pi++){ TOTAL+=partTotal(pi); }
+
+/* ---------- state ---------- */
+var S={view:"menu",part:0,found:{},order:[],idx:0,seq:null};
+var got=load(); if(got) S.found=got;
+function fkey(p){ return "p"+p; }
+function foundIn(p){ var o=S.found[fkey(p)]||{},n=0,k; for(k in o){ if(o[k])n++; } return n; }
+function totalFound(){ var n=0,i; for(i=0;i<PARTS;i++)n+=foundIn(i); return n; }
+function markFound(p,id){ if(!S.found[fkey(p)])S.found[fkey(p)]={}; S.found[fkey(p)][id]=true; save(); }
+function isFound(p,id){ var o=S.found[fkey(p)]; return !!(o&&o[id]); }
+
+/* ---------- part setup ---------- */
+function startPart(p){
+  var list=[],i,n = (p<SCENES.length)? SCENES[p].T.length : MIX.length;
+  for(i=0;i<n;i++) list.push(i);
+  S.order=shuffle(list); S.idx=0; panX=0; panY=0; yaw0=null; pit0=null;
+  if(p===SCENES.length) advanceMix();
+}
+function sceneById(id){ var i; for(i=0;i<SCENES.length;i++){ if(SCENES[i].id===id)return SCENES[i]; } return null; }
+function targetById(sc,id){ var i; for(i=0;i<sc.T.length;i++){ if(sc.T[i].id===id)return sc.T[i]; } return null; }
+function advanceMix(){
+  while(S.idx<S.order.length){
+    var m=MIX[S.order[S.idx]];
+    if(!isFound(SCENES.length,m[0]+":"+m[1])) return;
+    S.idx++;
+  }
+}
+
+/* ---------- camera, panning and tilt ---------- */
+var camOn=false, camStream=null, tiltOn=false;
+var yaw0=null, pit0=null, panX=0, panY=0, limX=0, limY=0;
+var VIS={l:0,t:0,r:0,b:0};
+function setVar(k,v){ document.documentElement.style.setProperty(k,v); }
+function camMsg(t){ var s=el("say"); if(s){ s.className="say"; s.textContent=t; } }
+function syncCam(){ var b=el("bCam"); if(b) b.textContent = camOn ? "Camera off" : "Camera on"; }
+
+var ASPECT=1200/700;
+function measure(){
+  var ar=el("ar"), pn=el("panel");
+  if(!ar||!pn){ limX=0; limY=0; return; }
+  var a=ar.getBoundingClientRect();
+  var sh=document.querySelector(".sheet.play");
+  var r=sh?sh.getBoundingClientRect():null;
+  var sideCard = !!(r && r.left > a.width*0.5 && r.height < a.height*0.92);
+  var visW = sideCard ? Math.max(240, r.left-12) : a.width;
+  var visH = sideCard ? a.height : Math.max(180, a.height-(r?r.height:0));
+  /* the scene is about twice the clear area, so there is always more to pan to */
+  var wByH = visH*1.30*ASPECT;
+  var wByW = visW*2.20;
+  var sw = Math.min(wByW, Math.max(visW*1.35, wByH));
+  pn.style.width = Math.round(sw)+"px";
+  pn.style.left  = Math.round(visW/2)+"px";
+  pn.style.top   = Math.round(visH/2)+"px";
+  VIS={l:0,t:0,r:visW,b:visH};
+  var p=pn.getBoundingClientRect();
+  /* allow a little overscroll so a thing at the very edge can still be brought to the middle */
+  limX=Math.max(0,(p.width-visW)/2+visW*0.40);
+  limY=Math.max(0,(p.height-visH)/2+visH*0.34);
+}
+function clamp(v,lo,hi){ return v<lo?lo:(v>hi?hi:v); }
+function setPan(x,y){
+  panX=clamp(x,-limX,limX); panY=clamp(y,-limY,limY);
+  setVar("--tx",panX.toFixed(1)+"px");
+  setVar("--ty",panY.toFixed(1)+"px");
+  showEdges();
+}
+function showEdges(){
+  var l=el("edgeL"), r=el("edgeR");
+  if(!l||!r) return;
+  l.className="edge l"+(panX < limX-8 ? " show":"");
+  r.className="edge r"+(panX > -limX+8 ? " show":"");
+}
+
+/* device movement pans the picture, so it stays put on the wall */
+function onOrient(e){
+  var yaw = (typeof e.alpha==="number") ? e.alpha : null;
+  var pit = (typeof e.beta==="number") ? e.beta : null;
+  if(yaw===null && pit===null) return;
+  if(yaw0===null){ yaw0=yaw; pit0=pit; return; }
+  var dy=0;
+  if(yaw!==null){ dy=yaw-yaw0; if(dy>180)dy-=360; if(dy<-180)dy+=360; }
+  var dp=(pit!==null&&pit0!==null)?(pit-pit0):0;
+  var gx = limX>0 ? limX/32 : 0;      /* about 32 degrees to reach the edge */
+  var gy = limY>0 ? limY/26 : 0;
+  setPan(dy*gx, -dp*gy);
+  setVar("--ry",(-6 - clamp(dy,-20,20)*0.12).toFixed(2)+"deg");
+  setVar("--rx",(1.6 + clamp(dp,-20,20)*0.10).toFixed(2)+"deg");
+}
+function askTilt(){
+  if(tiltOn) return;
+  var DOE=window.DeviceOrientationEvent;
+  if(!DOE) return;
+  function on(){ window.addEventListener("deviceorientation",onOrient,true); tiltOn=true; }
+  if(typeof DOE.requestPermission==="function"){
+    DOE.requestPermission().then(function(r){ if(r==="granted") on(); }).catch(function(){});
+  } else { on(); }
+}
+
+/* finger or mouse drag, for a board without sensors */
+var dragging=false,sx=0,sy=0,ox=0,oy=0,moved=0;
+function bindDrag(){
+  var ar=el("ar"); if(!ar) return;
+  ar.onpointerdown=function(ev){
+    dragging=true; moved=0; sx=ev.clientX; sy=ev.clientY; ox=panX; oy=panY;
+    ar.className="arlayer dragging";
+    if(ar.setPointerCapture){ try{ ar.setPointerCapture(ev.pointerId); }catch(e){} }
+  };
+  ar.onpointermove=function(ev){
+    if(!dragging) return;
+    var dx=ev.clientX-sx, dy=ev.clientY-sy;
+    moved=Math.max(moved,Math.abs(dx)+Math.abs(dy));
+    setPan(ox+dx, oy+dy);
+  };
+  ar.onpointerup=function(ev){
+    if(!dragging) return;
+    dragging=false; ar.className="arlayer";
+    if(moved<14) tapAt(ev.clientX,ev.clientY);
+  };
+  ar.onpointercancel=function(){ dragging=false; ar.className="arlayer"; };
+}
+
+function startCam(){
+  var md = navigator.mediaDevices;
+  if(!md || !md.getUserMedia){ camMsg("There is no camera on this device. Drag the picture with your finger."); return; }
+  md.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false}).then(function(st){
+    camStream=st;
+    var v=el("cam");
+    if(v){ try{ v.srcObject=st; }catch(e){} if(v.play) v.play(); }
+    var r=el("room"); if(r) r.className="room live";
+    camOn=true; syncCam(); askTilt();
+    camMsg("Turn around slowly. The picture stays on the wall.");
+  }).catch(function(){
+    camMsg("The camera did not open. Drag the picture with your finger.");
+  });
+}
+function stopCam(){
+  if(camStream){ var t=camStream.getTracks(),i; for(i=0;i<t.length;i++){ try{t[i].stop();}catch(e){} } }
+  camStream=null; camOn=false;
+  var r=el("room"); if(r) r.className="room";
+  var v=el("cam"); if(v){ try{ v.srcObject=null; }catch(e){} }
+  syncCam(); camMsg("Camera off. Drag the picture with your finger.");
+}
+function toggleCam(){ if(camOn) stopCam(); else startCam(); }
+
+function recentre(){
+  yaw0=null; pit0=null;
+  setVar("--ry","-6deg"); setVar("--rx","1.6deg");
+  measure(); setPan(0,0);
+  camMsg("The picture is back in the middle.");
+}
+
+/* ---------- shell ---------- */
+var SIZES=[{k:"Small",p:0.90,t:"clamp(20px,5.0vw,30px)"},
+           {k:"Med",  p:0.98,t:"clamp(25px,6.3vw,38px)"},
+           {k:"Large",p:1.06,t:"clamp(31px,7.8vw,48px)"}];
+var szi=1;
+function applySize(){
+  document.documentElement.style.setProperty("--pz",SIZES[szi].p);
+  document.documentElement.style.setProperty("--ui",SIZES[szi].t);
+}
+
+function go(v,p){ S.view=v; if(typeof p==="number"){ S.part=p; startPart(p); } render(); window.scrollTo(0,0); }
+
+/* ---------- prompts ---------- */
+function promptFor(p){
+  if(p<SCENES.length){
+    var sc=SCENES[p],i,t;
+    for(i=0;i<S.order.length;i++){ t=sc.T[S.order[i]]; if(!isFound(p,t.id)) return {id:t.id,txt:"Find "+t.w+".",why:t.why,w:t.w,scene:sc}; }
+    return null;
+  }
+  advanceMix();
+  if(S.idx>=S.order.length) return null;
+  var m=MIX[S.order[S.idx]], sc2=sceneById(m[0]), tg=targetById(sc2,m[1]);
+  return {id:tg.id,txt:tg.c,why:tg.why,w:tg.w,scene:sc2};
+}
+
+/* ---------- render ---------- */
+function render(){
+  applySize();
+  var app=el("app");
+  if(S.view==="menu"){ app.innerHTML=viewMenu(); bindMenu(); return; }
+  if(S.view==="words"){ app.innerHTML=viewWords(); bindWords(); return; }
+  app.innerHTML=viewPlay(); bindPlay(); syncCam();
+}
+
+function viewMenu(){
+  var h='<div class="topline"><span class="brand">Find It On The Screen</span>'+
+        '<span class="pillcount">'+totalFound()+' / '+TOTAL+'</span></div>';
+  h+='<div class="sheet menu">';
+  h+='<div class="lab">Choose a scene</div>';
+  if(!canSave) h+='<div class="warn">This page cannot save here. Everything still works.</div>';
+  h+='<div class="mgrid">';
+  var i,sc,n,t;
+  for(i=0;i<PARTS;i++){
+    sc = i<SCENES.length ? SCENES[i] : {step:"Last round",title:"Find the clue",desc:"Read the clue. Work out the word."};
+    n=foundIn(i); t=partTotal(i);
+    h+='<button class="mcard'+(n===t?" done":"")+'" data-part="'+i+'">';
+    h+='<span class="mstep">'+esc(sc.step)+'</span>';
+    h+='<span class="mtitle">'+esc(sc.title)+'</span>';
+    h+='<span class="mdesc">'+esc(sc.desc)+'</span>';
+    h+='<span class="score'+(n===t?" done":"")+'">Found '+n+'/'+t+'</span>';
+    h+='</button>';
+  }
+  h+='</div>';
+  h+='<div class="lab" style="margin-top:.7em">Controls</div><div class="ctrls">';
+  h+='<button class="ctl blue" id="bWords">Word list</button>';
+  h+='<button class="ctl" id="bFull">Full screen</button>';
+  h+=stepperHTML();
+  h+='</div>';
+  h+='<div class="note">Turn the camera on inside a scene. It needs a web address, not a file.</div>';
+  if(totalFound()>0) h+='<div style="margin-top:.6em"><button class="ctl" id="bReset">Start again</button></div>';
+  h+='</div>';
+  return h;
+}
+function bindMenu(){
+  var c=document.querySelectorAll(".mcard"),i;
+  for(i=0;i<c.length;i++){ c[i].onclick=(function(n){return function(){ go("play",n); };})(parseInt(c[i].getAttribute("data-part"),10)); }
+  el("bWords").onclick=function(){ go("words"); };
+  bindCommon();
+  var r=el("bReset"); if(r){ var armed=false; r.onclick=function(){
+    if(!armed){ armed=true; r.textContent="Tap again to clear"; r.className="ctl warnbtn"; return; }
+    S.found={}; save(); go("menu"); }; }
+}
+
+function stepperHTML(){
+  return '<span class="stepper"><button class="sbtn" id="bMinus">&#8722;</button>'+
+         '<span class="skey">'+SIZES[szi].k+'</span>'+
+         '<button class="sbtn" id="bPlus">+</button></span>';
+}
+function bindCommon(){
+  var m=el("bMinus"),p=el("bPlus"),f=el("bFull");
+  if(m) m.onclick=function(){ if(szi>0){szi--; render(); measure(); setPan(panX,panY);} };
+  if(p) p.onclick=function(){ if(szi<SIZES.length-1){szi++; render(); measure(); setPan(panX,panY);} };
+  if(f) f.onclick=function(){
+    if(document.fullscreenElement){ if(document.exitFullscreen)document.exitFullscreen(); }
+    else if(document.documentElement.requestFullscreen){ document.documentElement.requestFullscreen(); }
+  };
+}
+
+function viewPlay(){
+  var p=S.part, pr=promptFor(p), n=foundIn(p), t=partTotal(p);
+  var sc = pr ? pr.scene : (p<SCENES.length?SCENES[p]:sceneById(MIX[0][0]));
+  var h='';
+  h+='<button class="pill left" id="bHome"><span class="ico">&#8249;</span> Home</button>';
+  h+='<button class="pill right" id="bHint"><span class="ico">&#9678;</span> Hint</button>';
+  h+='<div class="arlayer" id="ar"><div class="panel" id="panel"><div class="stage" id="stage">'+sc.art()+'</div></div></div>';
+  h+='<div class="edge l" id="edgeL">\u2039 more</div><div class="edge r" id="edgeR">more \u203A</div>';
+  h+='<div class="sheet play">';
+  h+='<div class="lab">Find this</div>';
+  if(pr){ h+='<div class="clue" id="clue">'+esc(pr.txt)+'</div>'; }
+  else { h+='<div class="clue done">All '+t+' found. Well done.</div>'; }
+  h+='<div class="found">Found '+n+'/'+t+'</div>';
+  h+='<div class="say" id="say">'+(pr?"Move the camera or drag the picture. Then tap the thing.":"")+'</div>';
+  if(!pr){
+    h+='<div class="ctrls" style="margin-top:.4em">';
+    h+= (p<PARTS-1) ? '<button class="ctl go" id="bNextScene">Next scene</button>'
+                    : '<button class="ctl go" id="bNextScene">See the word list</button>';
+    h+='<button class="ctl" id="bHome2">Home</button></div>';
+  } else {
+    h+='<div class="lab" style="margin-top:.5em">Controls</div><div class="ctrls">';
+    h+='<button class="ctl blue" id="bCam">Camera on</button>';
+    h+='<button class="ctl" id="bRecenter">Recentre</button>';
+    h+=stepperHTML();
+    h+='</div>';
+  }
+  h+='</div>';
+  return h;
+}
+function bindPlay(){
+  el("bHome").onclick=function(){ go("menu"); };
+  var hb=el("bHint"); if(hb) hb.onclick=doHint;
+  bindDrag(); measure(); setPan(panX,panY);
+  var rc=el("bRecenter"); if(rc) rc.onclick=recentre;
+  var cb=el("bCam"); if(cb) cb.onclick=toggleCam;
+  var ns=el("bNextScene"); if(ns) ns.onclick=function(){
+    if(S.part<PARTS-1){ go("play",S.part+1); } else { go("words"); } };
+  var h2=el("bHome2"); if(h2) h2.onclick=function(){ go("menu"); };
+  bindCommon();
+}
+
+/* ---------- tapping ---------- */
+function nearTarget(cx,cy,id,pad){
+  var stage=el("stage"); if(!stage) return false;
+  var n=stage.querySelector('[data-hit="'+id+'"]'); if(!n) return false;
+  var r=n.getBoundingClientRect(); pad=pad||44;
+  return cx>=r.left-pad && cx<=r.right+pad && cy>=r.top-pad && cy<=r.bottom+pad;
+}
+/* geometric hit test: the last matching box wins, so it does not depend on paint order */
+function hitAtPoint(cx,cy){
+  var stage=el("stage"); if(!stage) return null;
+  var ns=stage.querySelectorAll("[data-hit]"), i, r, best=null;
+  for(i=0;i<ns.length;i++){
+    r=ns[i].getBoundingClientRect();
+    if(cx>=r.left && cx<=r.right && cy>=r.top && cy<=r.bottom) best=ns[i];
+  }
+  return best;
+}
+function tapAt(cx,cy){
+  var stage=el("stage"); if(!stage) return;
+  var n=hitAtPoint(cx,cy), id = n ? n.getAttribute("data-hit") : null;
+  var pr0=promptFor(S.part);
+  if(pr0 && id!==pr0.id && nearTarget(cx,cy,pr0.id)){ id=pr0.id; }
+  var p=S.part, pr=promptFor(p);
+  if(!pr) return;
+  if(!id){ miss("Nothing is there. Look again."); return; }
+  if(id!==pr.id){
+    if(p<SCENES.length && isFound(p,id)){ miss("You found that one already."); return; }
+    miss("Not that one. Look again.");
+    return;
+  }
+  if(p<SCENES.length){ markFound(p,pr.id); }
+  else { var m=MIX[S.order[S.idx]]; markFound(PARTS-1,m[0]+":"+m[1]); S.idx++; }
+  ping(stage.querySelector('[data-hit="'+pr.id+'"]'));
+  var msg='<b>'+esc(pr.w)+'</b> '+esc(pr.why);
+  render();
+  var s=el("say"); if(s){ s.className="say good"; s.innerHTML=msg; }
+}
+function miss(t){
+  var s=el("say"); if(s){ s.className="say bad"; s.textContent=t; }
+  var pn=el("stage"); if(pn){ pn.className="stage shake"; setTimeout(function(){ pn.className="stage"; },340); }
+}
+/* the scene is rotated, so overlays must be placed in the picture's own coordinates */
+function localBox(node){
+  var stage=el("stage"); if(!stage||!node) return null;
+  var k=stage.clientWidth/1200;
+  var x=parseFloat(node.getAttribute("x")||"0"), y=parseFloat(node.getAttribute("y")||"0");
+  var w=parseFloat(node.getAttribute("width")||"0"), h=parseFloat(node.getAttribute("height")||"0");
+  return {l:x*k, t:y*k, w:w*k, h:h*k};
+}
+function ping(node){
+  var stage=el("stage"); if(!stage||!node)return;
+  var b=localBox(node); if(!b) return;
+  var d=document.createElement("div"); d.className="ring";
+  var w=Math.max(b.w,b.h)*1.15;
+  d.style.left=(b.l+b.w/2-w/2)+"px";
+  d.style.top=(b.t+b.h/2-w/2)+"px";
+  d.style.width=w+"px"; d.style.height=w+"px";
+  stage.appendChild(d);
+  setTimeout(function(){ if(d.parentNode)d.parentNode.removeChild(d); },950);
+}
+function doHint(){
+  var pr=promptFor(S.part); if(!pr)return;
+  var stage=el("stage"); if(!stage)return;
+  var node=stage.querySelector('[data-hit="'+pr.id+'"]'); if(!node)return;
+  var b=node.getBoundingClientRect();
+  var cx=b.left+b.width/2, cy=b.top+b.height/2;
+  var ax=(VIS.l+VIS.r)/2, ay=(VIS.t+VIS.b)/2;
+  setPan(panX+(ax-cx), panY+(ay-cy));
+  b=node.getBoundingClientRect();
+  var lb=localBox(node); if(!lb) return;
+  var d=document.createElement("div"); d.className="hintpulse";
+  d.style.left=(lb.l-16)+"px"; d.style.top=(lb.t-16)+"px";
+  d.style.width=(lb.w+32)+"px"; d.style.height=(lb.h+32)+"px";
+  stage.appendChild(d);
+  setTimeout(function(){ if(d.parentNode)d.parentNode.removeChild(d); },3200);
+  var sa=el("say"); if(sa){ sa.className="say"; sa.textContent="Look inside the orange box."; }
+}
+
+/* ---------- word list ---------- */
+function viewWords(){
+  var h='<div class="topline"><span class="brand">All the words</span><span class="pillcount">'+totalFound()+' / '+TOTAL+'</span></div>';
+  h+='<div class="sheet menu">';
+  h+='<div class="lab">Say each word. Then say where it is.</div>';
+  var i,j,sc,t;
+  for(i=0;i<SCENES.length;i++){ sc=SCENES[i];
+    h+='<div class="wtitle">'+esc(sc.title)+'</div><div class="wlist">';
+    for(j=0;j<sc.T.length;j++){ t=sc.T[j];
+      h+='<div class="wrow"><span class="ww">'+esc(t.w)+'</span><span class="wd">'+esc(t.why)+'</span></div>'; }
+    h+='</div>';
+  }
+  h+='<div class="ctrls" style="margin-top:.7em"><button class="ctl go" id="bHome3">Home</button>'+stepperHTML()+'</div>';
+  h+='</div>';
+  return h;
+}
+function bindWords(){ el("bHome3").onclick=function(){ go("menu"); }; bindCommon(); }
+
+/* keyboard help for teacher on a laptop */
+document.addEventListener("keydown",function(e){
+  if(e.key==="Escape"){ go("menu"); }
+});
+
+go("menu");
+})();
+</script>
+</body>
+</html>
